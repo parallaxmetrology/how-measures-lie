@@ -1,0 +1,86 @@
+{
+  "dead": {
+    "support_pct": 0.183105,
+    "mask_pct": 100.0,
+    "true_x": 0.242661,
+    "true_y": -0.207436,
+    "reported_x": 0.0,
+    "reported_y": 0.0,
+    "p98_edge": 1.96262e-17
+  },
+  "dust": {
+    "raw_max": 2.85208e-08,
+    "share_pct": 33.3333,
+    "muted": 0.0112369
+  },
+  "starved": {
+    "coverage_pct": 0.0238095,
+    "edge_cx": 0.407839,
+    "edge_cy": -0.403213,
+    "mass_cx": 0.000214658,
+    "mass_cy": -0.00239498
+  },
+  "ceiling": {
+    "capped_at_80": 20,
+    "free_at_80": 76,
+    "capped_at_200": 20,
+    "free_at_200": 168
+  },
+  "ratio": {
+    "fig_l": 0.3,
+    "ratio_at_002": 150.0,
+    "ratio_at_02": 15.0,
+    "ratio_at_02_diff": 0.28,
+    "diff_at_002": 0.298
+  },
+  "resolution": {
+    "exact": 1.58496,
+    "lo": 1.41754,
+    "hi": 1.63819,
+    "at600_t05": 1.41754,
+    "at600_t01": 1.60605
+  },
+  "marks": {
+    "found_at_5": 0.0,
+    "found_coal_at_5": 0.983333
+  },
+  "fill": {
+    "fill_median": 0.249799,
+    "fill_white": 0.0373847,
+    "fill_black": 0.0999016,
+    "original": 0.0379851
+  },
+  "null": {
+    "real": 0.0765217,
+    "p_400": 0.0249377,
+    "p20_a": 0.047619,
+    "p20_b": 0.142857,
+    "p20_c": 0.047619,
+    "first_draw": 0.0186706
+  },
+  "foils": {
+    "target": 0.979167,
+    "foil_max": 0.416667,
+    "more_isolated": 14,
+    "cells": 447
+  },
+  "hough": {
+    "free_min": 0.0359965,
+    "free_max": 0.256774,
+    "seeded_unique": 1
+  },
+  "lens": {
+    "blend_flat": 0.0426548,
+    "blend_busy": 0.226164,
+    "notan_flat": 0.932744,
+    "notan_busy": 0.00620976,
+    "flat_area": 0.184452,
+    "busy_area": 0.0737038
+  },
+  "substrate": {
+    "whole": 0.994697,
+    "grey": 0.0,
+    "bare": 1.0,
+    "inked_pct": 2.85526
+  }
+}

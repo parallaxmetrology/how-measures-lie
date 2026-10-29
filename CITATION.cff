@@ -1,0 +1,18 @@
+cff-version: 1.2.0
+message: "If you use this checklist or its figures in research, please cite it as below."
+title: "How image measures lie quietly: nineteen silent failure modes of hand-built image measures"
+type: software
+authors:
+  - family-names: Parrish
+    given-names: Russell
+    orcid: https://orcid.org/0009-0008-9781-7995
+version: "1.0.0"
+date-released: 2026-10-29
+license: MIT
+url: https://www.parallaxmetrology.com/how_measures_lie.html
+repository-code: https://github.com/parallaxmetrology/how-measures-lie
+keywords: [image analysis, measurement, validation, normalisation, null models, reproducibility, failure modes]
+abstract: >
+  Nineteen ways a hand-built image measure returns a plausible, wrong number without raising
+  an error, drawn from the lab log of a deterministic painting-structure instrument, each with
+  a case and a check. Thirteen are reproduced on synthetic images by the scripts in this repository.

@@ -1,0 +1,416 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>How image measures lie quietly</title>
+<meta name="description" content="Nineteen ways a hand-built image measure returns a plausible, wrong number without raising an error, each with a case from the Image Structure Reader's lab log, a live demonstration, and the check that catches it.">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="canonical" href="https://www.parallaxmetrology.com/how_measures_lie.html">
+<style>
+:root { color-scheme: light; --surface:#fcfcfb; --plane:#f9f9f7; --ink:#0b0b0b; --ink2:#52514e; --muted:#898781; --rule:#e1e0d9; --accent:#eb6834; }
+body { background:var(--plane); color:var(--ink); font:16px/1.62 Georgia,"Iowan Old Style",serif; margin:0; }
+main { max-width:820px; margin:0 auto; padding:48px 24px 90px; }
+h1 { font:600 34px/1.15 system-ui,-apple-system,"Segoe UI",sans-serif; margin:0 0 10px; letter-spacing:-0.015em; }
+.sub { font:400 18px/1.45 system-ui,sans-serif; color:var(--ink2); margin:0 0 8px; }
+.meta { font:400 13px/1.5 system-ui,sans-serif; color:var(--muted); margin:0 0 34px; }
+h2 { font:600 21px/1.3 system-ui,sans-serif; margin:52px 0 6px; }
+h3 { font:600 17px/1.35 system-ui,sans-serif; margin:34px 0 8px; }
+h3 .n { color:var(--muted); font-weight:500; margin-right:6px; }
+p { margin:0 0 15px; }
+.lab { font:600 12px/1.4 system-ui,sans-serif; letter-spacing:.04em; text-transform:uppercase; color:var(--ink2); margin-right:6px; }
+.check { background:var(--surface); border:1px solid var(--rule); border-left:3px solid var(--accent); border-radius:6px;
+         padding:9px 13px; font:400 14.5px/1.55 system-ui,sans-serif; margin:12px 0 18px; }
+figure { margin:16px 0 14px; background:var(--surface); border:1px solid var(--rule); border-radius:8px; padding:14px; }
+figure img { width:100%; height:auto; display:block; }
+figcaption { font:400 13px/1.5 system-ui,sans-serif; color:var(--ink2); margin-top:9px; }
+.key { background:var(--surface); border:1px solid var(--rule); border-radius:8px; padding:14px 18px; margin:22px 0;
+       font:400 15px/1.6 system-ui,sans-serif; }
+.key b { font-weight:600; }
+.toc { font:400 14px/1.7 system-ui,sans-serif; columns:2; column-gap:28px; margin:10px 0 0; padding-left:20px; }
+.toc a { color:var(--ink); text-decoration:none; border-bottom:1px solid var(--rule); }
+.scroll { overflow-x:auto; background:var(--surface); border:1px solid var(--rule); border-radius:8px; margin:16px 0; }
+table { border-collapse:collapse; width:100%; font:400 13px/1.5 system-ui,sans-serif; }
+th,td { text-align:left; padding:7px 11px; border-bottom:1px solid var(--rule); vertical-align:top; }
+th { color:var(--ink2); font-weight:600; }
+code { font:13px ui-monospace,SFMono-Regular,Menlo,monospace; }
+a { color:var(--ink); }
+footer { margin-top:56px; padding-top:18px; border-top:1px solid var(--rule);
+         font:400 12.5px/1.6 system-ui,sans-serif; color:var(--ink2); }
+@media (max-width:600px) { .toc { columns:1; } h1 { font-size:28px; } }
+</style>
+</head>
+<body>
+<main>
+<h1>How image measures lie quietly</h1>
+<p class="sub">Nineteen ways a hand-built image measure returns a plausible, wrong number without raising an error, and the check that catches each one.</p>
+<p class="meta">Parallax Metrology · 29 October 2026 · from the lab log of the Image Structure Reader</p>
+
+<p>The Image Structure Reader is a deterministic instrument for reading the structure of paintings: where
+the masses sit, how they balance, what the eye is drawn through. Over sixteen studies its lab log recorded
+every time a number turned out to be wrong. Almost none of those errors raised an exception. The code ran,
+the number looked plausible, and in most cases a first draft had already built an argument on it before a
+control caught it.</p>
+
+<p>The failures are not specific to paintings or to this instrument. They live in the ordinary parts of
+image-measurement code: percentile normalisation, a threshold, a centroid, a ratio, a random null, a
+comparison set. Anyone building mass maps, balance scores, saliency summaries, colour statistics or
+composition indices will meet most of them.</p>
+
+<p>Each entry below gives what happens, a case where it happened, and the check. Where the failure can be
+reproduced on a synthetic image, it is reproduced here, live, by a short script: every number in a figure
+caption is computed, not drawn.</p>
+
+<div class="key"><b>The short version.</b> Most of these were caught the same way: by building an input
+whose right answer was already known and checking that the measure returned it. A field that has collapsed,
+a mask that covers nothing, a score pinned at its ceiling and a ratio with a vanishing denominator all look
+healthy from outside. The checks are cheap. Not running them is what is expensive.</div>
+
+<ol class="toc">
+<li><a href="#e1">The dead field</a></li>
+<li><a href="#e2">Stretched dust</a></li>
+<li><a href="#e3">The starved mask</a></li>
+<li><a href="#e4">Ceilings that fake agreement</a></li>
+<li><a href="#e5">Ratios with tiny denominators</a></li>
+<li><a href="#e6">Resolution is part of the measurement</a></li>
+<li><a href="#e7">Minimum mark size</a></li>
+<li><a href="#e8">Cleaning changes some measures, not others</a></li>
+<li><a href="#e9">A record needs a known-answer control</a></li>
+<li><a href="#e10">A control has free parameters too</a></li>
+<li><a href="#e11">A control's direction does not interpret itself</a></li>
+<li><a href="#e12">Single random draws mislead</a></li>
+<li><a href="#e13">A hand-picked comparison makes a false extreme</a></li>
+<li><a href="#e14">Unseeded randomness</a></li>
+<li><a href="#e15">The default lens is blind to the construction</a></li>
+<li><a href="#e16">The measure reads the substrate</a></li>
+<li><a href="#e17">A failure belongs to the situation</a></li>
+<li><a href="#e18">Two things with the same name</a></li>
+<li><a href="#e19">Worked is not contrasting</a></li>
+</ol>
+
+<h2>Normalisation</h2>
+
+<h3 id="e1"><span class="n">1</span>The dead field</h3>
+<p><span class="lab">What happens</span>Percentile normalisation maps the 2nd to the 98th percentile onto 0 to 1.
+When those two percentiles are equal, it returns all zeros. That happens whenever fewer than about 2% of
+pixels carry signal: a hard-edged shape on a flat ground, a document scan, an empty sky. Nothing downstream
+notices. A threshold at the field's 85th percentile is then a threshold at zero, which selects every pixel,
+and the centroid of every pixel is exactly the centre of the frame, wherever the shape actually is.</p>
+<p><span class="lab">Case</span>A black square placed off-centre read as perfectly centred. Two false
+findings built on this ("the centroid is translation-invariant", "the torque instability is hard-edge
+aliasing") survived a full review round and corrupted three earlier rounds of control numbers before
+anyone instrumented the mask.</p>
+<figure><img alt="An off-centre square, its all-zero stretched edge field, a mask covering the whole frame, and a plot where the reported offset stays at zero as the square moves" src="{{fig:dead_field}}">
+<figcaption>Only {{n:dead.support_pct:.2f}}% of pixels carry any gradient, so the stretched edge field is zero
+everywhere and its top 15% is {{n:dead.mask_pct:.0f}}% of the frame. The square's true offset is
+({{n:dead.true_x:+.2f}}, {{n:dead.true_y:+.2f}}); the reported offset is
+({{n:dead.reported_x:+.2f}}, {{n:dead.reported_y:+.2f}}). Right: the square moved across the frame.</figcaption></figure>
+<div class="check"><b>Check.</b> Test <code>p98(field) &gt; 0</code> before reading anything derived from the
+field, and refuse to label a dead one. A mask covering 100% of the frame is the symptom; the collapsed field
+is the cause.</div>
+
+<h3 id="e2"><span class="n">2</span>Stretched dust</h3>
+<p><span class="lab">What happens</span>The mirror image of the dead field. When a field is nearly constant but not
+exactly constant, min-max or percentile stretching expands rounding noise to full scale. The field then looks
+perfectly healthy, with a maximum of 1.0, while carrying no signal, so a health check on the stretched field
+passes it.</p>
+<p><span class="lab">Case</span>A colour-boundary measure read its maximum possible value on a pure grey
+step, where the right answer is zero; the measure's own guard against empty colour was dead code, because the
+field reaching it had already been stretched to 1.0. The same fault turned up again in the Notan mass
+extracted from the instrument, where it affected seven of nine test images.</p>
+<figure><img alt="A two-grey image, its chroma stretched into a black and white step, and a log-scale bar chart comparing rounding-level chroma with real muted and clear colour" src="{{fig:stretched_dust}}">
+<figcaption>Two greys and no colour: the raw chroma never exceeds {{n:dust.raw_max:.0e}}. Stretched, that noise
+becomes a full-strength colour step and makes up {{n:dust.share_pct:.0f}}% of a value-plus-colour mass. For
+scale, a barely tinted grey-brown reads {{n:dust.muted:.3f}}, about five orders of magnitude higher.</figcaption></figure>
+<div class="check"><b>Check.</b> Inspect magnitude before normalisation, never after. Gate only at machine
+zero (below 1e-6 here): muted paintings read around 0.01 to 0.04, and a higher floor would erase exactly the
+quiet colour that carries them.</div>
+
+<h3 id="e3"><span class="n">3</span>The starved mask</h3>
+<p><span class="lab">What happens</span>The field is alive, so the check in entry 1 passes, but the mask built
+from it covers almost nothing. Every coordinate then describes one small fragment, not the picture.</p>
+<p><span class="lab">Case</span>On a colour-field painting the structural mask was 0.077% of the frame: one
+small dark mark in a corner. The summary label read "a strong connected structural mass" for a painting with
+no hard edges anywhere. This corrected an earlier conclusion that coverage was only a symptom: for this
+failure, coverage is the gate.</p>
+<figure><img alt="A soft green rectangle on maroon with one small dark mark, an edge mask containing only that mark, and a value-mass map showing the rectangle" src="{{fig:starved_mask}}">
+<figcaption>Committed edges cover {{n:starved.coverage_pct:.2f}}% of the frame, all of it the one mark, so the
+edge centroid sits in the corner at ({{n:starved.edge_cx:+.2f}}, {{n:starved.edge_cy:+.2f}}). A value-mass
+reading, which never touches the edge mask, puts the picture's weight at
+({{n:starved.mass_cx:+.2f}}, {{n:starved.mass_cy:+.2f}}).</figcaption></figure>
+<div class="check"><b>Check.</b> Report mask coverage and refuse whole-image labels below a floor (0.5% worked:
+healthy paintings read 3 to 14%). Then look at what the mask actually contains.</div>
+
+<h3 id="e4"><span class="n">4</span>Ceilings that fake agreement</h3>
+<p><span class="lab">What happens</span>A count capped at 20, or a score clipped to 0..1, reads the same maximum on
+every rich image. Two images then "agree" because both hit the cap.</p>
+<p><span class="lab">Case</span>Two very different pictures both read 20 regions and 10 active regions, and
+this was quoted as a resemblance; both numbers were ceilings. Separately, a "restlessness" index read exactly
+1.000 at three resolutions; the unclipped value was 1.48.</p>
+<figure><img alt="An image of 80 blobs and a plot where the reported region count flattens at 20 while the true count keeps rising" src="{{fig:ceiling}}">
+<figcaption>A peak finder asked for at most 20 peaks. With 80 blobs it finds {{n:ceiling.free_at_80}} uncapped and
+reports {{n:ceiling.capped_at_80}}; with 200 it finds {{n:ceiling.free_at_200}} and reports
+{{n:ceiling.capped_at_200}}.</figcaption></figure>
+<div class="check"><b>Check.</b> Any bounded score should report when it is at its bound. When it is, fall
+back to the unclipped parts, and never quote it as a coordinate.</div>
+
+<h3 id="e5"><span class="n">5</span>Ratios with tiny denominators</h3>
+<p><span class="lab">What happens</span>A ratio explodes as its denominator approaches zero, and the explosion looks
+like a record.</p>
+<p><span class="lab">Case</span>A whole-versus-part balance ratio read about 31 on a painting whose parts were
+uniform (denominator 0.019). It was not even a property of the work: a synthetic square read 28 or 16
+depending only on where it was placed.</p>
+<figure><img alt="Two plots: figure-to-ground ratio rising steeply as the ground darkens, and figure-minus-ground difference staying nearly flat" src="{{fig:ratio}}">
+<figcaption>The arithmetic, on a contrast ratio. A figure of luminance {{n:ratio.fig_l:.2f}} against a ground of
+0.02 reads {{n:ratio.ratio_at_02:.0f}}; against 0.002 it reads {{n:ratio.ratio_at_002:.0f}}. The difference
+moves from {{n:ratio.ratio_at_02_diff:.3f}} to {{n:ratio.diff_at_002:.3f}}.</figcaption></figure>
+<div class="check"><b>Check.</b> Report the denominator next to every ratio. When the parts are uniform, call
+the ratio unquotable, not extreme.</div>
+
+<h2>Scale and reproduction</h2>
+
+<h3 id="e6"><span class="n">6</span>Resolution is part of the measurement</h3>
+<p><span class="lab">What happens</span>You never measure the painting. You measure the painting times the
+photograph, lens, compression and resize, at one scale window.</p>
+<p><span class="lab">Case</span>Thin-structure measures on a painting moved from 1.08 to 1.49 across a 400 to
+4000 pixel sweep, and an early "highest stability" claim built on one of them was retracted. Dense-area
+measures barely moved and could be compared.</p>
+<figure><img alt="A Sierpinski triangle generated exactly, the same triangle resampled, and a plot of measured fractal dimension against size for three thresholds" src="{{fig:resolution}}">
+<figcaption>A Sierpinski triangle generated at any power-of-two size reads its exact box-counting dimension,
+{{n:resolution.exact:.3f}}. Resample it once, the way a photograph is resampled, and the same object reads
+anywhere from {{n:resolution.lo:.2f}} to {{n:resolution.hi:.2f}}, depending only on the output size and the
+threshold used to binarise it. At 600 px: {{n:resolution.at600_t05:.2f}} at threshold 0.5,
+{{n:resolution.at600_t01:.2f}} at 0.1.</figcaption></figure>
+<div class="check"><b>Check.</b> Sweep resolution before comparing images. Compare only measures that survive
+the sweep, or match the scale window, and report the window with the number.</div>
+
+<h3 id="e7"><span class="n">7</span>Minimum mark size</h3>
+<p><span class="lab">What happens</span>A detector with a size floor finds nothing on a surface whose marks are
+smaller than the floor, and reports a clean zero.</p>
+<p><span class="lab">Case</span>An accent detector with a floor of about 41 pixels returned zero accents on
+broken-colour brushwork whose marks were about 16 pixels. Smoothing to brush scale first recovered them.</p>
+<figure><img alt="A field of small dots, and a plot of the share of marks found against mark size, with and without smoothing to mark scale" src="{{fig:mark_size}}">
+<figcaption>Sixty marks of each size. With 5 px marks the detector finds {{n:marks.found_at_5:.0%}} of them;
+smoothed to the marks' own scale first, it finds {{n:marks.found_coal_at_5:.0%}}.</figcaption></figure>
+<div class="check"><b>Check.</b> When a result is a surprising zero, look under it at the sub-threshold field
+before reporting a null.</div>
+
+<h3 id="e8"><span class="n">8</span>Cleaning changes some measures, not others</h3>
+<p><span class="lab">What happens</span>Denoising, or any preprocessing, inflates some readings, deflates others and
+leaves the rest untouched. It also changes what counts as an edge, because diffusion softens committed edges.</p>
+<p><span class="lab">Case</span>On a dark museum photograph, dust and grain inflated one dominance margin from
+1.3x to 2.8x and hid six real accents, including the fingertip of a pointing hand, while tonal measures moved
+only in the fourth decimal. Separately, a change blamed on removing a painting's cracks came from
+downscaling, not from the crack removal: at fixed resolution the cleaning moved the number from 0.487 to
+0.516, while downscaling alone moved it to 0.954.</p>
+<div class="check"><b>Check.</b> Re-run each measure with and without the cleaning, at the same resolution.
+Never compare edge-based numbers across pipelines that differ.</div>
+
+<h2>Controls and comparisons</h2>
+
+<h3 id="e9"><span class="n">9</span>A record needs a known-answer control of the same kind</h3>
+<p><span class="lab">What happens</span>An extreme value looks like a property of the work until you measure an ideal
+synthetic example of the same class.</p>
+<p><span class="lab">Case</span>A painting of a black square produced four "corpus records". A machine-perfect
+black square on a flat ground matched or beat all four: one score was 61.9 for the painting and 60.9 for
+any centred square. What remained was the deviation from the ideal, and every survivor was a deficit: the
+hand-tilt, not the square.</p>
+<div class="check"><b>Check.</b> Build the theorem case for the class, re-baseline against it, and quote the
+deviation from the ideal rather than the raw value.</div>
+
+<h3 id="e10"><span class="n">10</span>A control has free parameters too</h3>
+<p><span class="lab">What happens</span>A control introduces its own settings: a noise level, an offset, a fill
+value. If those settings move the result as much as the effect being claimed, the control measures nothing.</p>
+<p><span class="lab">Case</span>A control rested on a single grain amplitude that was never swept; sweeping it
+across an 8x range is what turned a coincidence into a finding. In another case, filling an ablated region
+with the median gave a score of 0.08, and filling it with white gave 2.05.</p>
+<figure><img alt="The same mass removed three ways, by median, white and black fill, and a bar chart of three different off-centre scores" src="{{fig:ablation_fill}}">
+<figcaption>One mass removed from a two-mass picture. The original reads {{n:fill.original:.3f}}. The same
+removal reads {{n:fill.fill_median:.3f}} with a median fill, {{n:fill.fill_white:.3f}} with white and
+{{n:fill.fill_black:.3f}} with black: a white or black fill is not an absence, it is a new mass.</figcaption></figure>
+<div class="check"><b>Check.</b> Sweep every free parameter of a control and report whether the ordering
+survives. For ablations, show that the result does not depend on the fill; a result that does is evidence
+the measure lives in a relation between regions, which is itself worth reporting.</div>
+
+<h3 id="e11"><span class="n">11</span>A control's direction does not interpret itself</h3>
+<p><span class="lab">What happens</span>When a number drops under a control, three cases look identical from outside:
+the control removed noise (trust the new value more), removed signal (trust it less), or changed the
+question (the two values are not comparable).</p>
+<p><span class="lab">Case</span>Compression collapsed a colour-boundary score correctly: a true chromatic
+boundary held 1.000 down to quality 12 while the noise-driven score died. Anisotropic diffusion collapsed the
+same score incorrectly, taking a known 1.000 to 0.000. A min-max normalisation returned about 1.0 whether
+the true ratio was 5x or 10x, because it is blind to magnitude by construction.</p>
+<div class="check"><b>Check.</b> Run the control on an input whose answer you already know before reading its
+effect on one whose answer you do not.</div>
+
+<h3 id="e12"><span class="n">12</span>Single random draws mislead</h3>
+<p><span class="lab">What happens</span>A null built by scrambling the image gives a different answer every seed. One
+draw can land anywhere, and twenty is often not enough.</p>
+<p><span class="lab">Case</span>A result looked significant after 20 seeds (p about 0.05) and was not after 100
+(p = 0.11). For another measure the null was chaotic: across five seeds its maximum ranged from 0.22 to
+10.97. The honest form there was "the work gives the same verdict every time; the nulls give a different one
+every seed".</p>
+<figure><img alt="A histogram of 400 phase-scrambled scores with the real score in the tail, and running p estimates for three seed orders converging slowly" src="{{fig:single_draw}}">
+<figcaption>A picture's off-centre score is {{n:null.real:.3f}}; a single phase-scrambled copy scored
+{{n:null.first_draw:.3f}}, which looks like a decisive gap. Against all 400 copies, p =
+{{n:null.p_400:.3f}}. Using only the first 20 draws, three different seed orders give p =
+{{n:null.p20_a:.3f}}, {{n:null.p20_b:.3f}} and {{n:null.p20_c:.3f}}.</figcaption></figure>
+<div class="check"><b>Check.</b> Use 100 or more draws and quote an empirical percentile. With zero exceedances
+in n draws, write p ≤ 1/(n+1), never p = 0.</div>
+
+<h3 id="e13"><span class="n">13</span>A hand-picked comparison makes a false extreme</h3>
+<p><span class="lab">What happens</span>"The most isolated mark" is only as good as the marks it was compared
+against, and foils chosen after seeing the target tend to lose.</p>
+<p><span class="lab">Case</span>A calligraphic inscription was called the most isolated mark in a landscape,
+measured against six hand-chosen marks, every one of them ink embedded in other ink. A full grid over every
+inked cell found 74 to 278 cells more isolated than it, across every threshold and radius tried.</p>
+<figure><img alt="An ink field with a target mark and six foils chosen from dense clusters, and a histogram showing many cells more isolated than the target" src="{{fig:foils}}">
+<figcaption>Against six foils picked from the clusters (best {{n:foils.foil_max:.2f}}), the target's isolation
+of {{n:foils.target:.2f}} is the clear maximum. Against every one of the {{n:foils.cells}} inked cells,
+{{n:foils.more_isolated}} are more isolated than it.</figcaption></figure>
+<div class="check"><b>Check.</b> Before any superlative, compare against a complete, unchosen reference set:
+the whole grid, the whole corpus, every mark.</div>
+
+<h3 id="e14"><span class="n">14</span>Unseeded randomness inside a "deterministic" pipeline</h3>
+<p><span class="lab">What happens</span>One library call uses randomness without a fixed seed, so the same script on
+the same image returns different numbers.</p>
+<p><span class="lab">Case</span>A probabilistic Hough transform returned an orientation statistic between 0.10
+and 0.20 across six back-to-back runs. The convergence point the lines defined was stable; the statistic
+over which lines survived was not.</p>
+<figure><img alt="An image of 40 lines and a strip plot: twelve unseeded runs scatter widely, twelve seeded runs sit on one value" src="{{fig:unseeded}}">
+<figcaption>Twelve runs of <code>probabilistic_hough_line</code> on the same 40 lines, with no seed: the
+statistic ranges from {{n:hough.free_min:.2f}} to {{n:hough.free_max:.2f}}. With <code>rng=0</code>, all
+twelve runs return the same value. (This figure is itself unseeded, so its range changes each time the page
+is rebuilt.)</figcaption></figure>
+<div class="check"><b>Check.</b> Run everything twice. Seed every random step, and report anything that
+depends on randomness as a range over repeated runs.</div>
+
+<h2>What the measure is actually reading</h2>
+
+<h3 id="e15"><span class="n">15</span>The default lens is blind to whatever the work is built from</h3>
+<p><span class="lab">What happens</span>A mass map built mostly from edges under-reads exactly what a given picture
+uses most. Colour fields hide from luminance, flat value masses hide from edges, colour-only shapes hide from
+both.</p>
+<p><span class="lab">Case</span>A painted crowd of praying figures carried 9% of the edge-based mass and 48%
+of the value mass: the painting's largest mass, visible only to a texture-robust squint. The same blind spot
+appeared in a colour-field painting (structure only in chroma) and in a cow painted only in colour.</p>
+<figure><img alt="A flat dark ellipse and a small noisy patch; an edge-led mass map that sees only the ellipse's outline and the patch; a value-mass map that sees only the ellipse" src="{{fig:default_lens}}">
+<figcaption>The flat dark mass covers {{n:lens.flat_area:.0%}} of the frame. An edge-led blend gives it
+{{n:lens.blend_flat:.0%}} of the mass and gives a small busy patch ({{n:lens.busy_area:.0%}} of the frame)
+{{n:lens.blend_busy:.0%}}. A value mass gives them {{n:lens.notan_flat:.0%}} and {{n:lens.notan_busy:.0%}}.
+Neither is neutral: the value lens is blind to texture that averages to the ground's tone.</figcaption></figure>
+<div class="check"><b>Check.</b> Before running, name how the picture is built (by value, colour, line or
+texture) and expect the default lens to under-read there. Reach for the lens that matches before the first
+read, not after the null surprises you.</div>
+
+<h3 id="e16"><span class="n">16</span>The measure reads the substrate</h3>
+<p><span class="lab">What happens</span>A colour statistic computed relative to the image's own distribution reports
+the paper, silk or ground when that dominates the picture.</p>
+<p><span class="lab">Case</span>A colour score was higher on a patch of bare silk (0.84) than on the whole
+calligraphy (0.73). On colour-field paintings the same score did not move when the colour was desaturated,
+so it was not reading the colour at all; it fails on an empty sheet and on a full colour field for the same
+reason, because it assumes a figure on a neutral ground.</p>
+<figure><img alt="Grey ink strokes on warm tinted paper, and a bar chart where the whole image and a bare patch of paper score the same" src="{{fig:substrate}}">
+<figcaption>Grey ink on tinted paper; the ink covers {{n:substrate.inked_pct:.0f}}% of the frame. A score for
+how much of the image's colour sits in the empty space reads {{n:substrate.whole:.2f}}, which sounds like a
+finding about colour in the void. A bare patch of paper reads {{n:substrate.bare:.2f}}, and removing the colour
+reads {{n:substrate.grey:.2f}}. The score is reading the paper.</figcaption></figure>
+<div class="check"><b>Check.</b> The three-way test: the real image, a colour-stripped copy, and a bare patch of
+the substrate. If the bare patch scores like the work, the measure is reading the support.</div>
+
+<h3 id="e17"><span class="n">17</span>A failure belongs to the situation, not the object</h3>
+<p><span class="lab">What happens</span>A measure fails on one figure, and the failure gets read as a property of
+that figure.</p>
+<p><span class="lab">Case</span>A painter's self-portrait in black against a shadowed wall could not be
+separated from its ground, and a first draft read this as how the artist had painted himself, "without a
+boundary". Every dark-on-dark figure in the painting failed the same way, and a shadowed attendant failed
+harder (chosen component 0.9% of its box against the painter's 9.1%). The study had simply not measured the
+others.</p>
+<div class="check"><b>Check.</b> Before attributing a failure to an object, test a second object in the same
+tonal situation. Calibrate against a figure of the same class, never a lit one.</div>
+
+<h3 id="e18"><span class="n">18</span>Two things with the same name</h3>
+<p><span class="lab">What happens</span>"The largest mass" from an edge mask and from a density map can be different
+objects. "Share" can have two denominators.</p>
+<p><span class="lab">Case</span>A summary sentence attached the edge mask's largest component to the density
+map's anchor; they were different objects in different parts of the frame. A "committed edge" share was
+compared against a threshold meant for a different denominator, and 85% became 47%, rank 4 of 7.</p>
+<div class="check"><b>Check.</b> Name which subsystem each number comes from, and match each metric to its
+denominator.</div>
+
+<h3 id="e19"><span class="n">19</span>Worked is not the same as contrasting</h3>
+<p><span class="lab">What happens</span>A measure of coherent, worked form says nothing about tonal contrast. A region
+can be intricately worked and almost invisible at once.</p>
+<p><span class="lab">Case</span>An engraved gold halo read highly worked (coherence 0.993) while being only
+about 0.02 darker than the flat gold around it, and the face painted against it dissolved into it (contrast
+about 0.010).</p>
+<div class="check"><b>Check.</b> When an argument is about figure and ground, or about what the eye separates,
+measure contrast directly. Do not let one axis stand in for another because the words sound close.</div>
+
+<h2>The checklist</h2>
+<div class="scroll"><table>
+<thead><tr><th>#</th><th>Failure</th><th>Check</th></tr></thead>
+<tbody>
+<tr><td>1</td><td>Dead field</td><td><code>p98(field) &gt; 0</code> before reading it</td></tr>
+<tr><td>2</td><td>Stretched dust</td><td>Raw magnitude before normalising; gate at machine zero</td></tr>
+<tr><td>3</td><td>Starved mask</td><td>Mask coverage floor; look at what the mask holds</td></tr>
+<tr><td>4</td><td>Ceilings</td><td>Report when a score sits at its bound</td></tr>
+<tr><td>5</td><td>Tiny denominators</td><td>Report the denominator with the ratio</td></tr>
+<tr><td>6</td><td>Resolution</td><td>Sweep it; compare only what survives</td></tr>
+<tr><td>7</td><td>Mark-size floor</td><td>Look under a surprising zero</td></tr>
+<tr><td>8</td><td>Cleaning</td><td>With and without, at the same resolution</td></tr>
+<tr><td>9</td><td>Records</td><td>Known-answer ideal of the same class; quote the deviation</td></tr>
+<tr><td>10</td><td>Control parameters</td><td>Sweep them; fill-invariance for ablations</td></tr>
+<tr><td>11</td><td>Control direction</td><td>Run the control on a known answer first</td></tr>
+<tr><td>12</td><td>Single draws</td><td>n ≥ 100; p ≤ 1/(n+1), never 0</td></tr>
+<tr><td>13</td><td>Hand-picked foils</td><td>Complete, unchosen reference set</td></tr>
+<tr><td>14</td><td>Unseeded randomness</td><td>Run twice; seed everything</td></tr>
+<tr><td>15</td><td>Default lens</td><td>Name the construction mode before the run</td></tr>
+<tr><td>16</td><td>Substrate</td><td>Real, colour-stripped, bare-substrate</td></tr>
+<tr><td>17</td><td>Situation, not object</td><td>Second object in the same situation</td></tr>
+<tr><td>18</td><td>Same name, two things</td><td>Name the subsystem and the denominator</td></tr>
+<tr><td>19</td><td>Worked vs contrasting</td><td>Measure the axis the argument is about</td></tr>
+</tbody></table></div>
+
+<h2>What these have in common</h2>
+<p>Read together, the entries fall into three families. Some are faults in shared plumbing, the
+normalisation and thresholding every measure passes through (1 to 5); they are the most dangerous because
+one fault reaches every number at once, and the most fixable, because a guard written once protects all of
+them. Some are faults of scale and reproduction (6 to 8), where the number is a fact about the photograph
+as much as the picture. And the rest are faults of inference (9 to 19): the number is correct, and the
+sentence built on it is not.</p>
+
+<p>The common cure is the known-answer input: an image built so that the right answer is not in doubt. A
+black square that must read off-centre, a grey that must read colourless, a mark that must be found, a
+scramble that must not beat the original. A small set of such images, for testing mass and composition
+measures, ships with the <a href="https://github.com/parallaxmetrology/notan">notan</a> package, and the
+scripts behind every figure here are in the
+<a href="https://github.com/parallaxmetrology/how-measures-lie">companion repository</a>. When a measure surprises you, look underneath it before believing it, and before discarding it: in the
+lab log, several of these failures became the sharpest results.</p>
+
+<h2>Method</h2>
+<p>The cases are taken from the Image Structure Reader's lab log, written up from its numbered instrument
+findings; their numbers are the log's, measured on museum photographs of paintings, and are not
+recomputed here. The figures are synthetic reproductions of the same failure modes, generated by one
+script with numpy, scipy, scikit-image and matplotlib (entries 2, 3, 15 and 16 also use the Notan mass from
+the notan package); each caption's numbers are read from that script's output when the page is built. The demonstrations use deliberately ordinary code (percentile stretch, percentile
+threshold, weighted centroid, capped peak finding) so that they show the pattern, not a particular
+implementation. The code for every figure is in the
+<a href="https://github.com/parallaxmetrology/how-measures-lie">companion repository</a>. The analysis and
+this page were built with an AI assistant under the author's direction.</p>
+
+<footer>
+<p>&copy; 2026 Russell Parrish / A.rtist I.nfluencer / Parallax Metrology. All rights reserved. No part of this
+system, visual material, or accompanying documents may be reproduced, distributed, or transmitted in any form or
+by any means, including AI training datasets, without explicit written permission from the creator. More info:
+<a href="https://www.artistinfluencer.com">www.artistinfluencer.com</a> and
+<a href="https://www.parallaxmetrology.com">www.parallaxmetrology.com</a></p>
+<p>Measurements are made on public-domain museum captures and, for in-copyright works, under private structural
+research. Reproductions are shown only where rights permit.</p>
+<p>Exception for this page: its text and figures are also published under
+<a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a>, and the code that makes the figures under
+MIT, in the <a href="https://github.com/parallaxmetrology/how-measures-lie">companion repository</a>.</p>
+</footer>
+</main>
+</body>
+</html>
